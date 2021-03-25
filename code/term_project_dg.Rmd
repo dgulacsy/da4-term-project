@@ -1,0 +1,73 @@
+---
+title: "Term Project"
+subtitle: "DA4 Assignment 2"
+author: "Dominik Gulacsy"
+date: "25/03/2021"
+output:
+  html_document:
+    code_download: true
+    df_print: paged
+    number_sections: true
+  html_notebook:
+    df_print: paged
+---
+
+```{r}
+# The project has to investigate a relationship between two variables, with an aim to answer a business or a policy-relevant question. The analysis should focus on answering a causal question: how a causal variable affects an outcome.
+
+# Y is outcome
+# X is causal variable (It should be related to an intervention or policy)
+# Z some confounder(s)
+
+# You may do a difference-in-differences or a panel data project. 
+
+
+
+```
+
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE, cache = F,fig.align='center')
+```
+
+
+```{r init_env, include=FALSE}
+# Clear Environment Pane
+rm(list = ls())
+
+# World Bank Data API
+library(WDI)
+# Data Man
+library(tidyverse)
+# Viz
+library(ggplot2)
+library(knitr)
+
+```
+
+```{r get_data}
+# Get data by calling the WDI API
+df<-WDI(
+  country = "all",
+  indicator = c("GB.XPD.RSDV.GD.ZS","SI.POV.GINI"),
+  start = 2005,
+  end = 2015,
+  extra = FALSE,
+  cache = NULL
+)
+
+colnames(df) <- c("iso2c", "country", "year","")
+
+df <- df[! df$iso2c %in% as.vector(non_countries$`non-countries`),]
+df<-df[complete.cases(df), ]
+df$year <- as.factor(df$year)
+
+```
+
+
+
+# Dataset
+## asd
+## avd
