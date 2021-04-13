@@ -496,7 +496,7 @@ ggplot(vis_df,aes(x=is_good_coverage,y=tax,group=is_good_coverage))+
 ```
 
 
-```{r dist_diff_by_year, fig.height=10}
+```{r dist_diff_by_year, fig.height=7}
 # Gini Diffs by year
 ggplot(vis_df,aes(x=is_good_coverage,y=gdppc,group=is_good_coverage), facets=year)+
   geom_boxplot(aes(fill=is_good_coverage))+
