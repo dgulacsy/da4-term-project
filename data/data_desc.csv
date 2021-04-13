@@ -1,0 +1,12 @@
+﻿Variable,Link,Category,Data Type,Description,Example
+iso2c,,"Qualitative, Nominal",string,ISO 2 letter country code to uniquely identify the given country,HU
+country,,"Qualitative, Nominal",string,Official country name accepted by the World Bank ,Hungary
+year,,"Quantitative, Interval",double,The given year for that statistics are provided,2017
+ic,,"Qualitative, Ordinal",string,Income level category of a country based on World Bank rules,HIC
+tax,https://data.worldbank.org/indicator/IC.TAX.TOTL.CP.ZS,"Quantitative, Ratio",double,Total tax rate measures the amount of taxes and mandatory contributions payable by businesses after accounting for allowable deductions and exemptions as a share of commercial profits.,46.4
+gini,https://data.worldbank.org/indicator/SI.POV.GINI?view=chart,"Quantitative, Ratio",double,"Gini index measures the extent to which the distribution of income (or, in some cases, consumption expenditure) among individuals or households within an economy deviates from a perfectly equal distribution.",30.6
+top10,https://data.worldbank.org/indicator/SI.DST.10TH.10?view=chart,"Quantitative, Ratio",double,Percentage share of income or consumption is the share that accrues to subgroups of population indicated by deciles or quintiles.,3
+bottom10,https://data.worldbank.org/indicator/SI.DST.FRST.10?view=chart,"Quantitative, Ratio",double,Percentage share of income or consumption is the share that accrues to subgroups of population indicated by deciles or quintiles.,23.9
+gdppc,https://data.worldbank.org/indicator/NY.GDP.PCAP.PP.KD?view=chart,"Quantitative, Ratio",double,GDP per capita based on purchasing power parity (PPP)  in constant 2017 international dollars,29559.21447
+pop,https://data.worldbank.org/indicator/SP.POP.TOTL?view=chart,"Quantitative, Ratio",double,"Total population is based on the de facto definition of population, which counts all residents regardless of legal status or citizenship. The values shown are midyear estimates.",9787966
+f_invest,https://data.worldbank.org/indicator/BX.KLT.DINV.WD.GD.ZS,"Quantitative, Ratio",double,Foreign direct investment are the net inflows of investment to acquire a lasting management interest (10 percent or more of voting stock) in an enterprise operating in an economy other than that of the investor. (Divided by GDP),-8.487330524

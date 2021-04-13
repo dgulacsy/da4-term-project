@@ -12,31 +12,23 @@ output:
     df_print: paged
 ---
 
-```{r}
+```{r, echo=FALSE}
 # The project has to investigate a relationship between two variables, with an aim to answer a business or a policy-relevant question. The analysis should focus on answering a causal question: how a causal variable affects an outcome.
 
 # Y is outcome
 # X is causal variable (It should be related to an intervention or policy)
 # Z some confounder(s)
-
-# You may do a difference-in-differences or a panel data project. 
-
-
-
 ```
-
-
-
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE, cache = F,fig.align='center')
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE, cache = F, fig.align='center')
 ```
-
 
 ```{r init_env, include=FALSE}
 # Clear Environment Pane
-rm(list = ls())
-
+# rm(list = ls())
+# General
+library(skimr)
 # World Bank Data API
 library(WDI)
 # Data Man
@@ -44,30 +36,493 @@ library(tidyverse)
 # Viz
 library(ggplot2)
 library(knitr)
+library(ggthemes)
+library(kableExtra)
+# Stats
+library(huxtable)
+library(estimatr)
+library(modelsummary)
+library(fixest)
+library(cowplot)
+```
 
+```{r visual_specs}
+# Setting up visual specifications
+
+theme_custom <- function() {
+    theme(
+        title = element_text(
+            size   = 8,
+            face   = "bold"),
+        axis.title.y = element_text(),
+        axis.title.x = element_text(),
+        legend.title = element_blank()
+    )
+}
+theme_set(theme_fivethirtyeight())
+colors<-c('#008FD5','#FF2700','#77AB43')
+```
+
+[GitHub Repository](https://github.com/dgulacsy/da4-term-project)
+
+# Introduction
+Income/wealth inequality has become one of the most relevant topics in recent years. As many US. investors and founders have gained large amounts on the stock market in the last few years, growing their personal wealth to a level where some of them have higher net worth than some countries' GDP. (ie.: Jeff Bezos has a higher net worth than Iraq, Hungary, Sudan, Ukraine, Morocco or Ecuador) As of these stunning revelations the discussion on income inequality is getting ever so vehement. Not surprisingly, the question may rise whether governments are able to fulfill one of their fundamental purpose: redistribution of income and wealth. As this is a broad and complex issue and I only have limited capacity to do the analysis, I focus only one particular aspect of it, taxation. I chose this as it is one of the primary tools of governments to redistribute income among individuals. Consequently, I aim to answer whether higher tax rates on commercial profits decrease income inequality. 
+
+# Data Description
+
+In this analysis I am using a dataset that I ensembled using mainly the [WDI](https://cran.r-project.org/web/packages/WDI/WDI.pdf) R package which enabled be to download indicators from the [World Bank](https://data.worldbank.org/indicator). My data is country level and  I am considering the following variables for my analysis: Gini index, share of income owned by the bottom 10%, share of income owned by the top 10%, total tax rate on commercial profits (%), income category of the country, GDP/capita, total population, foreign investment (net inflow), strength of legal rights and ease of doing business. I queried the data from 2005 till 2019. As including either legal rights or ease of doing business result in a large share of observations being incomplete I decide not to use these potential confounder variables in my analysis. I showcase my variables that I use in this analysis in the table below.
+
+```{r data_desc}
+# Load data description
+data_desc<-read_csv("data/data_desc.csv")
+
+data_desc<-data_desc %>% mutate(Variable=ifelse(!is.na(Link),paste0("[", Variable, "](", Link, ")"),Variable)) %>% 
+  select(-Link)
+
+kable(data_desc,digits = 2) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
 ```
 
 ```{r get_data}
-# Get data by calling the WDI API
-df<-WDI(
-  country = "all",
-  indicator = c("GB.XPD.RSDV.GD.ZS","SI.POV.GINI"),
-  start = 2005,
-  end = 2015,
-  extra = FALSE,
-  cache = NULL
+# # # Get data by calling the WDI API
+# data_raw<-WDI(
+#   country = "all",
+#   indicator = c("IC.TAX.TOTL.CP.ZS","SI.POV.GINI","SI.DST.FRST.10","SI.DST.10TH.10","NY.GDP.PCAP.PP.KD","SP.POP.TOTL","SE.XPD.TOTL.GD.ZS","BX.KLT.DINV.WD.GD.ZS","IC.LGL.CRED.XQ","IC.BUS.EASE.XQ"),
+#   start = 2005,
+#   end = 2019,
+#   extra = FALSE,
+#   cache = NULL
+# )
+# 
+# # Foreign investment - BX.KLT.DINV.CD.WD
+# # Strength of legal rights index  - IC.LGL.CRED.XQ
+# # Ease of doing business index - IC.BUS.EASE.XQ
+# 
+# colnames(data_raw) <- c("iso2c", "country", "year","tax","gini","bottom10","top10","gdppc","pop","edu_exp","f_invest","legal_rights","business_easiness")
+# write_csv(data_raw,"data/temp.csv")
+# 
+# 
+# # Filter Out Non-country level observations
+# non_countries<-read_csv('https://raw.githubusercontent.com/dgulacsy/da4-term-project/main/data/non-countries.csv')
+# 
+# data_raw <- data_raw[! data_raw$iso2c %in% as.vector(non_countries$`non-countries`),]
+# 
+# # Change some variables
+# data_raw<-data_raw %>%
+#   mutate(inc_gap=top10-bottom10,
+#          pop=pop/10^6,
+#          ) %>%
+#   select(-c('top10','bottom10'))
+# 
+# # Add income category as variable
+# ic_df<-read_csv("data/income_cat_countries.csv")
+# data_raw<-merge(data_raw,ic_df)
+# data_raw<-data_raw %>% 
+#   mutate(ic=ifelse(ic=="HIC","HIC","LMC"))
+```
+
+```{r save_data}
+# # Save to disk
+# write_csv(data_raw,file = "data/tax_inc_inequality_workdata.csv")
+
+```
+
+```{r data_av_exploration1}
+# Load prepared data from disk
+data <- read_csv("data/tax_inc_inequality_workdata.csv") %>% 
+  mutate(ic=as.factor(ic))
+
+# Dropping missing values
+data <- data %>%
+  drop_na(c("tax", "gini", "gdppc", "pop","f_invest","inc_gap"))
+  # drop_na(c("tax","gini","gdppc","pop","f_invest","legal_rights","inc_gap")) 
+  # drop_na(c("tax","gini","gdppc","pop","f_invest","legal_rights","edu_exp","inc_gap"))
+
+## Too few datapoints with adding edu_exp or legal_rights variables
+# skim(data)
+
+# Drop potential confounder variables with poor coverage
+data<-data %>% select(!c("legal_rights","edu_exp","business_easiness"))
+
+```
+
+I decide to use Gini as my outcome variables and the tax rate (% of profit) as my causal variable. I also decide to run robustness checks by looking at the income gap (top 10% - bottom 10%) so I include it as well. I also decide not to use logs for these variables as keeping them in levels makes model interpretation much easier in this case. To the contrary, I took log of GDP/capita and total population as log changes in these variable can be approximately interpreted as percentage changes and thus they will be closer to normal distribution.
+
+As I am interested in whether taxation is an effective governmental tool to mitigate income inequality I am not interested in the effect on the individual level. Consequently, I ruled out the usage of population as weights. To prepare data for first difference models I also took lagged differences of each variable.
+
+I included the foreign investment variable as a confounder in my analysis since I think it affects both tax rates and income inequality. Firstly, businesses prefer to invest in countries that have lower tax rates. With this in mind, some countries may try to lower tax rates to incentivize foreign investment. I assume that there is at least a partially reverse relation between foreign investment and tax profit. Secondly, foreign investment is likely to widen the income inequality as generally high-income individuals benefit disproportionately more from foreign deals (ie.: building oil mining rigs).
+
+```{r data_av_exploration2}
+# See country structure of panel data
+agg_ctry <- data %>%
+  group_by(country) %>%
+  summarise(n = n()) %>%
+  arrange(n)
+
+# See year structure of panel data
+agg_year <- data %>%
+  group_by(year) %>%
+  summarise(n = n())
+
+threshold<-9
+# Create working dataframe
+wdf<-merge(data,filter(agg_ctry,n>=threshold))
+# Create residual dataframe (countries with poor coverage dropped from modeling)
+rdf<-merge(data,filter(agg_ctry,n<threshold))
+
+# length(unique(wdf$country))
+# length(unique(rdf$country))
+# nrow(wdf)
+
+# WDF Year structure
+agg_year_wdf<-wdf %>%
+  group_by(year) %>%
+  summarise(wdf_n=n())
+```
+
+As far as coverage is concerned, I have a rather unbalanced dataset. Missing values may pose a serious threat to the reliability of our results if datapoints are not missing randomly. Our estimates will be biased as this way there would be a systematic pattern in missing values. To handle this I decide to balance out the data so I discard those countries that have poor coverage for the 2005-2019 time period. I also take a look at how many periods each country has. To decide where to draw the line between poor and acceptable coverage I plot the distribution of countries regarding how many available datapoints they have. Based on that we can see that many countries only have 1-3 datapoints. However, there is also a fair amount of countries with around 13-15 available periods. By setting the threshold to 9 or more datapoints I keep 54 countries out 149 that have high availability. This is low enough to let us have the sufficient number of countries while not too low to have units with really poor coverage. Looking at the chart on the right we can see that we generally have about 50 countries for each year, on the other hand in some years it is less than half of the available countries for that given year. Furthermore, we can also see that 2019 data is not in for most countries.
+
+```{r data_av_exploration3, fig.width=12}
+# See distribution of data availability
+av_dist<-table(agg_ctry$n) %>%  
+  as.data.frame()
+
+avp1<-ggplot(av_dist,aes(Var1,Freq))+
+  geom_bar(stat = 'identity')+
+  geom_vline(aes(xintercept=threshold-0.5),
+            color=colors[2], linetype="dashed", size=1.2)+
+  labs(x='# of Years Available',
+       y='# of Countries',
+       title = 'Distribution of Data Availability (2000-2016)')+
+  theme_custom()
+
+# Data availability across time
+temp_df<-merge(agg_year,agg_year_wdf) %>%
+  gather("is_wdf","n",-year)
+
+avp2<-ggplot(temp_df, aes(year, n, fill = is_wdf)) +
+  geom_bar(stat = 'identity') +
+  labs(x = 'Year',
+       y = '# of Countries',
+       title = 'Data Availability Across Time (2000-2019)') +
+  scale_fill_manual(values = c("#808080", colors[1]),
+                    labels = c("Not used", "Used")) +
+  theme_custom()+
+  theme(axis.title.x = element_blank())
+
+avp<-plot_grid(avp1,avp2,ncol=2)
+avp
+
+```
+
+Looking at the distribution of key variables, we can say that they are skewed to the right but not in an extreme fashion. The tax rate variable has some extreme values but I deem them to be valid data points and I decide to include them in the analysis. 
+
+```{r var_exploration, fig.width=12}
+
+# Distributions of Key Variables
+temp_df<-gather(wdf %>% select(c("iso2c","tax","gini","inc_gap")), key="var",value = "value",-iso2c)
+
+key_plots<-ggplot(temp_df,aes(x = as.numeric(value),fill=var))+
+  geom_histogram()+
+  facet_wrap(~var,ncol = 3, scales = 'free')+
+  labs(title="Distributions of Key Variables")+
+  scale_fill_fivethirtyeight()+
+  theme_custom()+
+  theme(axis.title.x = element_blank(),
+        legend.position = "none")
+
+key_plots
+```
+
+```{r add_vars}
+wdf <- wdf %>%
+  mutate(
+    lngdppc = log(gdppc),
+    lnpop = log(pop)) %>% 
+  arrange(iso2c, year) %>%
+  group_by(iso2c) %>%
+  mutate(
+    d_tax = tax - lag(tax),
+    d_gini = gini - lag(gini),
+    d_inc_gap = inc_gap - lag(inc_gap),
+    d_lngdppc= lngdppc- lag(lngdppc),
+    d_lnpop= lnpop- lag(lnpop),
+    d_f_invest = f_invest-lag(f_invest)
+  ) %>%
+  ungroup()
+```
+
+After looking at the data and thinking through my causal setup I decided to use a fixed effect regression with aggregate time trend as my primary model to estimate the effect I am looking for. I opted for this model as I am only interested in the long-term effect and I expect long-term effects to substantiate in a few years which means that FE probably gives a good approximation of the long-term effects. Another reason I chose this model type is the unbalanced nature of the dataset as FE regressions handle unbalanced data better.
+
+# Results & Robustness Checks
+
+I run 4 fixed-effects regressions on the dataset. I created a baseline model without any confounders and I added two more by considering GDP/capita, population and foreign net investment as confounders. I also run a regression with a income gap being the outcome variable to check the robustness of my results, whether measuring a the income inequality with a slightly different metric would drastically change the interpretation. During the building of the models I paid attention not to include any variables that describe the capability or certain characteristics of governments as I believe these are part of the mechanism through which income inequality may potentially change thanks to change in tax rates.
+
+```{r fe_reg}
+# Fixed Effects Model with Time and Country Fixed Effects -----
+fe_models <- list(
+  "fe_base_gini" = as.formula("gini ~ tax + year"),
+  "fe_2c_gini" = as.formula("gini ~ tax + year + lnpop + lngdppc"),
+  "fe_3c_gini" = as.formula("gini ~ tax + year + lngdppc + lnpop + f_invest"),
+  "fe_2c_inc_gap" = as.formula("inc_gap ~ tax + year + lngdppc + lnpop")
 )
 
-colnames(df) <- c("iso2c", "country", "year","")
+fe_fits<-sapply(fe_models,function(f){
+  lm_robust(
+    formula = f,
+    data = wdf,
+    se_type = "stata",
+    fixed_effect =  ~ iso2c ,
+    clusters = iso2c
+  )
+},simplify = F,USE.NAMES = T)
+```
 
-df <- df[! df$iso2c %in% as.vector(non_countries$`non-countries`),]
-df<-df[complete.cases(df), ]
-df$year <- as.factor(df$year)
+```{r fe_results}
+
+# Display Model Results ----
+fe_res<-huxreg("(1)\n FE Baseline\nGini" = fe_fits$fe_base_gini,
+                  "(2)\n FE Controlled \nGini" = fe_fits$fe_2c_gini,
+                  "(3)\n FE Controlled \nGini" = fe_fits$fe_3c_gini,
+                  "(4)\n FE Controlled \nIncome Gap" = fe_fits$fe_2c_inc_gap, 
+  coefs = c(
+    "Tax Rate (% of Profit)" = "tax",
+    "ln(GDP/capita)" = "lngdppc",
+    "ln(Population)" = "lnpop",
+    "Foreign Investment"= "f_invest"),
+  statistics = c("N. obs." = "nobs", 
+      "Adj. R squared" = "adj.r.squared",
+      "F statistic" = "statistic"),
+  note = "Within R squared is provided. Clustered standard errors are presented below in parentheses. \n
+  *** p < 0.001; ** p < 0.01; * p < 0.05 \n
+  Data: WDI (World Bank), unbalanced panel data with 54 countries between 2005 and 2019."
+  )
+
+fe_res %>% 
+  insert_row(c("Year dummies", "Yes", "Yes", "Yes", "Yes"), after = 9) %>%
+  insert_row(c("Country-specific trends", "Yes", "Yes", "Yes", "Yes"), after = 10) %>% 
+  set_italic(final(1), 1) %>% 
+  set_caption("Fixed Effect Models")
+
+```
+
+Looking at the results of the 4 models, we can see that tax rate is only significant in case of the 4th model where we measure income inequality with income gap between the bottom and top 10%. One universal outcome is that all tax coefficients are negative which suggests a negative relationship between income inequality and tax rates. In other words, it looks like all models show that higher tax rates are associated with lower Gini indexes on average. This is the direction of relationship we would expect as countries with higher tax revenue ought to be more potent in terms of income redistribution. On the contrary, we cannot substantiate the existence of this relationship in the population or general pattern represented by the data as results lack statistical significance.  
+
+Diving into the results, we can see that including the logarithm of GDP/capita and population changes our estimated coefficient for the causal variable. It increases the coefficient of the causal variable. Although, it is not enough to make it statistically significant, we can identify that GDP/capita captures most of the variation in the Gini index as well as in the income gap. In contrast, we can also see by comparing the 2nd and 3rd models that foreign investment has no effect in this case. It does not change the causal variable's coefficient so it is not really a useful confounder variable. Due to this, I decide to accept the 2nd FE model as my main model. The result of this model tells us that the Gini index is 0.033 percentage point lower, on average, compared to its long run mean and its aggregate trend, where and when the total tax rate on commercial profits is 1 percentage point higher compared to its long run mean and its aggregate trend. In my views, my chosen model is the best option to estimate the causal effect I am interested in with the use this dataset. 
+
+Assessing the validity of the model I come out doubtful. Although I tried my best to get to the closest to the actual causal effect, I think there are many other confounder variables that influence the relationship in question. For example, I would include data on the general ownership structure of firms in different countries as this may affect both tax rates and income inequality. 
+
+Nevertheless, I compare its result to the coefficient estimates of some other models to test its robustness. Firstly, by looking at the 4th model which has a significant negative coefficient value for the causal variable on a 5% significance level. I think this result does not severely contradicts the statement of my main model as shows the same sign and it is barely significant.
+
+Secondly, I also try to shed some light on the nature of the causal relationship by running a two first difference models. In case of the first model I only use the change in population and change in GDP/capita as confounders without any lags while in the second model I add 2 lags. Looking at the results we can see that we end up in a rather similar situation than before. The causal coefficient in model 1 turns out to be just significant at a 5% significance level while also being negative. With the second model we can see the time-decomposition of the assumed effect. Based on lag coefficients the cumulative or long-term effect of tax rate seems to diminish and become net zero over time. This result calls into question the one we got from the FE model. To come to a more conservative conclusion base on this, I would say that the true affect is likely to be somewhere between -0.033 and -0.001.
+
+```{r fd_2lag}
+# First Difference Model with Time Trend and Two Lags --------
+fd_models<-list(
+  "fd_2c_gini" = as.formula("d_gini ~ d_tax + year + d_lngdppc + d_lnpop"), 
+  "fd_2c_gini_2lag"=as.formula("d_gini ~ d_tax + lag(d_tax,1) + lag(d_tax,2) + year + d_lngdppc + d_lnpop"),
+  "fd_2c_inc_gap"= as.formula("d_inc_gap ~ d_tax + year + d_lngdppc + d_lnpop")
+)
+
+fd_fits <- sapply(fd_models, function(f) {
+  lm_robust(
+    formula = f,
+    data = wdf,
+    se_type = "stata",
+    clusters = iso2c
+  )
+},simplify = F,USE.NAMES = T)
+
+```
+
+```{r fd_results}
+# Display Model Results ----
+fd_res<-huxreg("(1)\n FD | No Lags \n d_Gini" = fd_fits$fd_2c_gini,
+                  "(2)\n FD | 2 Lags \nd_Gini" = fd_fits$fd_2c_gini_2lag,
+                  # "(3)\n FD | No Lags \nd_Income Gap" = fd_fits$fd_2c_inc_gap, 
+  coefs = c(
+    "Chg. Tax Rate" = "d_tax",
+    "Chg. Tax Rate Lag1" = "lag(d_tax, 1)",
+    "Chg. Tax Rate Lag2" = "lag(d_tax, 2)",
+    "ln(GDP/capita)" = "d_lngdppc",
+    "ln(Population)" = "d_lnpop", 
+    "Constant" = "(Intercept)"),
+  statistics = c("N. obs." = "nobs", 
+      "Adj. R squared" = "adj.r.squared",
+      "F statistic" = "statistic"),
+  note = "Clustered standard errors are presented below in parentheses. \n
+  *** p < 0.001; ** p < 0.01; * p < 0.05 \n
+  Data: WDI (World Bank), unbalanced panel data with 54 countries between 2005 and 2019."
+  )
+
+fd_res %>% 
+  insert_row(c("Year dummies", "Yes", "Yes"),
+             after = 13) %>%
+  set_italic(final(1), 1) %>% 
+  set_caption("First Difference Models")
+```
+
+# Heterogenity
+
+To better understand the research question I proposed I decide to run my selected/main model on two subsets defined by the income category of each country. Using this splitting rule I ended up with 31 countries in the High Income category and with 23 countries in the Low or Middle Income category. Looking at the results, we can see that in the High Income category the nature of the causal relationship remains the same. It seems negative but statistically insignificant in this case as well on a 5% significance level. Although still insignificant the coefficient changes sign and turns to positive when we narrow our focus on Low or Middle Income countries. All in all, our results suggest that the effect may be meaningfully different based on the income level of a country.
+
+```{r income_cat_models}
+wdf_hic<-wdf %>% filter(ic=="HIC")
+wdf_lmc<-wdf %>% filter(ic=="LMC")
+
+f = as.formula("gini ~ tax + year + lngdppc + lnpop")
+
+hic_fe_2c_gini <-  lm_robust(
+  formula = f,
+  data = wdf_hic,
+  se_type = "stata",
+  clusters = iso2c
+)
+
+lmc_fe_2c_gini <-  lm_robust(
+  formula = f,
+  data = wdf_lmc,
+  se_type = "stata",
+  clusters = iso2c
+)
+```
+
+```{r het_fe_results}
+
+# Display Model Results ----
+het_fe_res<-huxreg("(1)\n FE (High Income)\nGini" = hic_fe_2c_gini,
+               "(2)\n FE (Low & Middle Income\nGini" = lmc_fe_2c_gini,
+               "(3)\n FE Controlled \nGini" = fe_fits$fe_2c_gini, 
+  coefs = c(
+    "Tax Rate (% of Profit)" = "tax",
+    "ln(GDP/capita)" = "lngdppc",
+    "ln(Population)" = "lnpop"),
+  statistics = c("N. obs." = "nobs", 
+      "Adj. R squared" = "adj.r.squared",
+      "F statistic" = "statistic"),
+  note = "Within R squared is provided. Clustered standard errors are presented below in parentheses. \n
+  *** p < 0.001; ** p < 0.01; * p < 0.05 \n
+  Data: WDI (World Bank), unbalanced panel data with 54 countries between 2005 and 2019."
+  )
+
+het_fe_res %>% 
+  insert_row(c("Year dummies", "Yes", "Yes", "Yes"), after = 7) %>%
+  insert_row(c("Country-specific trends", "Yes", "Yes", "Yes"), after = 8) %>% 
+  set_italic(final(1), 1) %>% 
+  set_caption("Fixed Effect Models by Income Category")
+```
+
+# Conclusion
+In this analysis I had the motivation to better understand whether one of the key redistributional tool of governments, tax rates, truly have a reducing effect on the level of income inequality in a given country. To answer this question I used an unbalanced panel data including 53 countries through 15 years from 2005 to 2019. I used GDP/capita, population and foreign investment to control for potential confounders. Based on data availability and the fact that I am looking to measure mid-term/long-term effect of tax rates I decided to accept the result of a fixed effect regression with aggregate time trend and confounder variables as my best estimate. I also looked at other models to assess robustness of my results. My conclusion based on the selected model and robustness checks is that the true effect of tax rates on the Gini index may be somewhere between -0.033 and -0.001, but using only this data we cannot say there is an effect as we could not get statistically significant coefficients universally. Furthermore, we also learned that the potential effect may be vastly different in Low or Middle Income countries compared to high ones. Taking all of these insights into consideration, I would propose a policy change mainly in Low and Middle Income countries to reform the governments' redistributive channels and review social programs like education and social benefits to improve their efficiency.
+
+# Appendix
+
+## Data Exploration
+```{r fig.width=12}
+# Plot Key Variables
+y1<-ggplot(wdf,aes(x=year,y=gini))+
+  geom_point(alpha=0.2)+
+  geom_smooth(method = "loess", color=colors[1])+
+    labs(y = 'Gini Index',
+       title = 'Gini Index Over Time')+
+  theme_custom()+
+  theme(axis.title.x = element_blank())
+
+y2<-ggplot(wdf,aes(x=year,y=inc_gap))+
+  geom_point(alpha=0.2)+
+  geom_smooth(method = "loess", color=colors[1])+
+    labs(y = 'Income Gap',
+       title = 'Income Gap Over Time')+
+  theme_custom()+
+  theme(axis.title.x = element_blank())
+
+x<-ggplot(wdf,aes(x=year,y=tax))+
+  geom_point(alpha=0.2)+
+  geom_smooth(method = "loess", color=colors[1])+
+    labs(y = 'Tax Rate (% of Profit)',
+       title = 'Tax Rate (% of Profit) Over Time')+
+  theme_custom()+
+  theme(axis.title.x = element_blank())
+
+p<-plot_grid(y1,y2,x,nrow = 1)
+p
+```
+
+
+```{r}
+# Distributions of Potential Confounder Variables
+temp_df<-gather(wdf %>% select(c("iso2c","gdppc","pop","f_invest")), key="var",value = "value",-iso2c)
+
+confounder_plots<-ggplot(temp_df,aes(x = as.numeric(value)))+
+  geom_histogram()+
+  facet_wrap(~var,ncol = 1, scales = 'free')+
+  labs(title="Distributions of Potential Confounder Variables")+
+  theme_custom()+
+  theme(axis.title.x = element_blank(),
+        legend.position = "none")
+
+confounder_plots
+```
+
+## Analysis of Unbalance 
+
+```{r data_prep_viz}
+# Create df for visualization
+vis_df <- merge(data,agg_ctry) %>% 
+  mutate(is_good_coverage=ifelse(n>=threshold,1,0) %>% as.factor())
+```
+
+```{r dist_diffs}
+# Aggregate Gini diffs
+ggplot(vis_df,aes(x=is_good_coverage,y=gini,group=is_good_coverage))+
+  geom_boxplot(aes(fill=is_good_coverage))+
+  labs(x=NULL,
+       y='Gini',
+       title = 'Distribution of Gini between used and not used countries')+
+  scale_fill_fivethirtyeight(labels = c("Not Used", "Used"))+
+  theme_custom()+
+  theme(axis.text.x = element_blank())
+
+# Aggregate Tax Rate diffs
+ggplot(vis_df,aes(x=is_good_coverage,y=tax,group=is_good_coverage))+
+  geom_boxplot(aes(fill=is_good_coverage))+
+  labs(x=NULL,
+       y='Tax Rate (% of Profit)',
+       title = 'Distribution of Tax Rate between used and not used countries')+
+  scale_fill_fivethirtyeight(labels = c("Not Used", "Used"))+
+  theme_custom()+
+  theme(axis.text.x = element_blank())
 
 ```
 
 
+```{r dist_diff_by_year, fig.height=10}
+# Gini Diffs by year
+ggplot(vis_df,aes(x=is_good_coverage,y=gdppc,group=is_good_coverage), facets=year)+
+  geom_boxplot(aes(fill=is_good_coverage))+
+  facet_wrap( ~ year, ncol=5)+
+  labs(x=NULL,
+       y='Gini',
+       title = 'Distribution of Gini between used and not used countries by year')+
+  scale_fill_fivethirtyeight(labels = c("Not Used", "Used"))+
+  theme_custom()+
+  theme(axis.text.x = element_blank())
 
-# Dataset
-## asd
-## avd
+# Tax Rate Diffs by year
+ggplot(vis_df,aes(x=is_good_coverage,y=tax,group=is_good_coverage), facets=year)+
+  geom_boxplot(aes(fill=is_good_coverage))+
+  facet_wrap( ~ year, ncol=5)+
+  labs(x=NULL,
+       y='Tax Rate (% of Profit)',
+       title = 'Distribution of Tax Rate between used and not used countries by year')+
+  scale_fill_fivethirtyeight(labels = c("Not Used", "Used"))+
+  theme_custom()+
+  theme(axis.text.x = element_blank())
+
+# Look at used countries
+wdf_agg<-agg_ctry[agg_ctry$n>=threshold,] %>% rename(`No. Periods`=n)
+
+kable(wdf_agg, caption = "List of Countries Used") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+```
